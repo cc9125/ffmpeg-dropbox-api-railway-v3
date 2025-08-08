@@ -8,4 +8,4 @@ PYTHONUNBUFFERED = "1"
 cmds = ["python -m venv /opt/venv && . /opt/venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt"]
 
 [start]
-cmd = "gunicorn app:app --bind 0.0.0.0:$PORT"
+cmd = "gunicorn app:app --bind 0.0.0.0:$PORT --timeout 900 --workers 1 --threads 2"

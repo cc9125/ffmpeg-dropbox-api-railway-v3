@@ -1,19 +1,14 @@
-# FFmpeg Dropbox Split & Upload API (Railway v3.1)
+# FFmpeg Dropbox Split & Upload API (Railway v3.2, long-timeout)
 
-Accepts Dropbox share links in /s, /scl form, or direct dl links.
+**Why this build?**
+Avoids `502 Bad Gateway` caused by long processing by increasing Gunicorn timeout to 900s.
 
-POST `/split-audio-upload`
-```jsonc
-{
-  "url": "https://www.dropbox.com/scl/fi/<id>/meeting.wav?rlkey=...&dl=0",
-  "segment_time": 400,
-  "overlap_seconds": 10,
-  "format": "wav",
-  "dropbox_token": "<DROPBOX_ACCESS_TOKEN>",
-  "dest_root": "/test/wav",
-  "group_prefix": "meetingA",
-  "max_dirs": 5,
-  "max_files_per_dir": 5
-}
-```
-Uploads chunks to Dropbox subfolders 01..05, each max 5 files, filling the lowest-numbered folder first.
+**Deploy**
+- Push to GitHub
+- Railway → Deploy from GitHub
+- Nixpacks installs python3.11 + ffmpeg
+- Start: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 900 --workers 1 --threads 2`
+
+**Call**
+POST `/split-audio-upload` with the same JSON as v3.1.
+Also increase your Make HTTP module Timeout to 600–900s for big files.

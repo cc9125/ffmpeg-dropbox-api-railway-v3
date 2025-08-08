@@ -13,12 +13,10 @@ DROPBOX_CONTENT_UPLOAD = "https://content.dropboxapi.com/2/files/upload"
 DROPBOX_LIST_FOLDER = "https://api.dropboxapi.com/2/files/list_folder"
 
 def to_direct_dl(url: str) -> str:
-    # Accept /s, /scl, or direct dl links
     if "dropboxusercontent.com" in url:
         return url
     if "dropbox.com" in url:
         u = url.replace("www.dropbox.com", "dl.dropboxusercontent.com")
-        # strip dl=0 toggles
         u = u.replace("?dl=0", "").replace("&dl=0", "")
         return u
     return url
@@ -74,7 +72,7 @@ def split_audio_upload():
     max_per = int(data.get("max_files_per_dir", 5))
 
     if not dropbox_url or not ("dropbox.com" in dropbox_url or "dropboxusercontent.com" in dropbox_url):
-        return jsonify({"error": "Missing or invalid Dropbox share URL", "url": dropbox_url}), 400
+        return jsonify({"error": "Missing or invalid Dropbox share URL"}), 400
     if not token:
         return jsonify({"error": "Missing dropbox_token"}), 400
 
@@ -124,7 +122,6 @@ def split_audio_upload():
         if loops > max_loops:
             break
 
-        # compute chunk length
         chunk = float(segment_time)
         if duration_s is not None:
             remaining = duration_s - start
@@ -133,7 +130,6 @@ def split_audio_upload():
             chunk = min(chunk, remaining)
 
         out_file = os.path.join(out_dir, f"segment-{seq:03d}.{ext}")
-        # fast copy
         p = subprocess.run([
             "ffmpeg", "-hide_banner", "-nostdin", "-y",
             "-ss", str(max(0.0, start)),
@@ -143,7 +139,6 @@ def split_audio_upload():
             out_file
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if p.returncode != 0 or (not os.path.exists(out_file) or os.path.getsize(out_file) == 0):
-            # fallback re-encode
             audio_codec = "aac" if ext in ("mp3","m4a","aac") else "pcm_s16le"
             cmd = [
                 "ffmpeg", "-hide_banner", "-nostdin", "-y",
@@ -159,7 +154,6 @@ def split_audio_upload():
             if p2.returncode != 0 or (not os.path.exists(out_file) or os.path.getsize(out_file) == 0):
                 return jsonify({"error": "ffmpeg segment failed", "detail": p2.stderr.decode(errors="ignore")[:4000]}), 500
 
-        # pick folder & upload
         subdir = pick_subdir()
         if subdir is None:
             return jsonify({"error": "All destination subfolders are full", "dest_root": dest_root}), 409
@@ -177,7 +171,6 @@ def split_audio_upload():
         start += max(1.0, float(segment_time) - float(overlap))
         time.sleep(0.1)
 
-    # cleanup
     try:
         os.remove(in_path)
     except Exception:
@@ -187,8 +180,7 @@ def split_audio_upload():
         "status": "success",
         "group_prefix": group_prefix,
         "uploaded_count": len(uploads),
-        "uploaded": uploads,
-        "watch_hint": f"Watch {dest_root}/01 in Make; API fills the lowest-numbered subfolder first (<{max_per} files)."
+        "uploaded": uploads
     }), 200
 
 if __name__ == "__main__":
