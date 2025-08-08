@@ -13,7 +13,15 @@ DROPBOX_CONTENT_UPLOAD = "https://content.dropboxapi.com/2/files/upload"
 DROPBOX_LIST_FOLDER = "https://api.dropboxapi.com/2/files/list_folder"
 
 def to_direct_dl(url: str) -> str:
-    return url.replace("www.dropbox.com", "dl.dropboxusercontent.com").replace("?dl=0", "")
+    # Accept /s, /scl, or direct dl links
+    if "dropboxusercontent.com" in url:
+        return url
+    if "dropbox.com" in url:
+        u = url.replace("www.dropbox.com", "dl.dropboxusercontent.com")
+        # strip dl=0 toggles
+        u = u.replace("?dl=0", "").replace("&dl=0", "")
+        return u
+    return url
 
 def ensure_dir_format(i: int) -> str:
     return f"{i:02d}"
@@ -65,7 +73,7 @@ def split_audio_upload():
     max_dirs = int(data.get("max_dirs", 5))
     max_per = int(data.get("max_files_per_dir", 5))
 
-    if not dropbox_url or "dropbox.com" not in dropbox_url:
+    if not dropbox_url or not ("dropbox.com" in dropbox_url or "dropboxusercontent.com" in dropbox_url):
         return jsonify({"error": "Missing or invalid Dropbox share URL"}), 400
     if not token:
         return jsonify({"error": "Missing dropbox_token"}), 400
@@ -76,14 +84,17 @@ def split_audio_upload():
     out_dir = f"/tmp/splits_{work_id}"
     os.makedirs(out_dir, exist_ok=True)
 
+    # Download
     try:
         subprocess.run(["curl", "-L", dl_url, "-o", in_path], check=True)
     except subprocess.CalledProcessError as e:
         return jsonify({"error": "Failed to download from Dropbox", "detail": str(e)}), 500
 
+    # Duration (best-effort)
     try:
         probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", in_path],
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", in_path],
             check=True, capture_output=True, text=True
         )
         duration_s = float(probe.stdout.strip())
@@ -113,6 +124,7 @@ def split_audio_upload():
         if loops > max_loops:
             break
 
+        # compute chunk length
         chunk = float(segment_time)
         if duration_s is not None:
             remaining = duration_s - start
@@ -121,6 +133,7 @@ def split_audio_upload():
             chunk = min(chunk, remaining)
 
         out_file = os.path.join(out_dir, f"segment-{seq:03d}.{ext}")
+        # fast copy
         p = subprocess.run([
             "ffmpeg", "-hide_banner", "-nostdin", "-y",
             "-ss", str(max(0.0, start)),
@@ -130,6 +143,7 @@ def split_audio_upload():
             out_file
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if p.returncode != 0 or (not os.path.exists(out_file) or os.path.getsize(out_file) == 0):
+            # fallback re-encode
             audio_codec = "aac" if ext in ("mp3","m4a","aac") else "pcm_s16le"
             cmd = [
                 "ffmpeg", "-hide_banner", "-nostdin", "-y",
@@ -145,6 +159,7 @@ def split_audio_upload():
             if p2.returncode != 0 or (not os.path.exists(out_file) or os.path.getsize(out_file) == 0):
                 return jsonify({"error": "ffmpeg segment failed", "detail": p2.stderr.decode(errors="ignore")[:4000]}), 500
 
+        # pick folder & upload
         subdir = pick_subdir()
         if subdir is None:
             return jsonify({"error": "All destination subfolders are full", "dest_root": dest_root}), 409
@@ -162,6 +177,7 @@ def split_audio_upload():
         start += max(1.0, float(segment_time) - float(overlap))
         time.sleep(0.1)
 
+    # cleanup
     try:
         os.remove(in_path)
     except Exception:
