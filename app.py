@@ -72,7 +72,7 @@ def split_audio_upload():
     max_per = int(data.get("max_files_per_dir", 5))
 
     if not dropbox_url or not ("dropbox.com" in dropbox_url or "dropboxusercontent.com" in dropbox_url):
-        return jsonify({"error": "Missing or invalid Dropbox share URL"}), 400
+        return jsonify({"error": "Missing or invalid Dropbox share URL","url":dropbox_url}), 400
     if not token:
         return jsonify({"error": "Missing dropbox_token"}), 400
 
